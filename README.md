@@ -69,6 +69,10 @@ This copy is served by GitHub Pages from the `main` branch. The `CNAME` file
 sets the custom domain and `.nojekyll` tells Pages to serve the files as they
 are. Pushing to `main` redeploys.
 
+Browsers and Cloudflare keep `styles.css`, `app.js` and `data.js` for up to four
+hours. `index.html` loads them as `app.js?v=2` and so on; raise that number
+whenever one of those files changes so visitors get the new copy straight away.
+
 ## Refresh the schedule data
 
 `data.js` is generated from CMU's public
