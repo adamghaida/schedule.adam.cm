@@ -126,7 +126,10 @@ function saveLocal(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state
 const hasContent = s => s.taken.length > 0 || SEMS.some(k => s.plans[k].list.length > 1 || s.plans[k].list.some(p => p.items.length || p.blocks.length));
 
 let state = loadLocal();
-const ui = {tab:'fits', q:'', dept:'', tba:false, open:new Set(), preview:null, takenOpen:false};
+const UI_KEY = 'cmuq-planner-ui';
+function loadCollapsed(){ try { const u = JSON.parse(localStorage.getItem(UI_KEY) || '{}'); return Array.isArray(u.collapsed) ? u.collapsed.filter(x => typeof x === 'string').slice(0, 200) : []; } catch (e) { return []; } }
+function saveCollapsed(){ try { localStorage.setItem(UI_KEY, JSON.stringify({collapsed:[...ui.collapsed]})); } catch (e) {} }
+const ui = {tab:'fits', q:'', dept:'', tba:false, open:new Set(), preview:null, takenOpen:false, collapsed:new Set(loadCollapsed())};
 let cat, plan, R, info, takenSet, checking;
 let prevFit = null, prevOn = null, prevVisible = null, deltaTimer = 0;
 
@@ -477,10 +480,23 @@ function renderCatalog(opts = {}){
   const shown = leaving.size ? cat.courses.filter(c => visible.has(c.n) || leaving.has(c.n)) : list;
   let html = '', lastDept = null;
   if (note) html += `<li class="note" style="padding:2px 2px 8px">${note}</li>`;
+  // a department picked in the dropdown is always open; search results are a flat list
+  const folded = d => !searching && !ui.dept && ui.collapsed.has(d);
+  const perDept = new Map(); for (const c of list) perDept.set(c.d, (perDept.get(c.d) || 0) + 1);
   for (const c of shown){
-    if (!searching && c.d !== lastDept){ lastDept = c.d; html += `<li class="group">${esc(c.d)}</li>`; }
+    const shut = folded(c.d);
+    if (!searching && c.d !== lastDept){
+      lastDept = c.d;
+      const n = perDept.get(c.d) || 0;
+      if (!shut || n) html += `<li class="group${shut ? ' is-collapsed' : ''}"><button class="group-btn" type="button" data-act="group" data-d="${esc(c.d)}" aria-expanded="${!shut}"><i class="chev" aria-hidden="true"></i><span>${esc(c.d)}</span><span class="gcount">${n}</span></button></li>`;
+    }
+    if (shut) continue;
     html += rowHtml(c, leaving.has(c.n) ? 'leaving' : entering.has(c.n) ? 'entering' : '');
   }
+  const ca = $('#collapseAll'), depts = [...perDept.keys()];
+  ca.hidden = searching || !!ui.dept || depts.length < 2;
+  ca.textContent = depts.length && depts.every(d => ui.collapsed.has(d)) ? 'Expand all departments' : 'Collapse all departments';
+  ca.dataset.mode = depts.length && depts.every(d => ui.collapsed.has(d)) ? 'expand' : 'collapse';
   if (!shown.length){
     html = `<li class="empty">${searching ? `No ${esc(DATA[state.sem].label)} course matches “${esc(q)}”.`
       : ui.tab === 'clash' ? 'Nothing clashes with your schedule.'
@@ -543,6 +559,8 @@ function act(a, el){
   const n = el.dataset.n, c = n && cat.byNum.get(n);
   switch (a){
     case 'toggle': ui.open.has(n) ? ui.open.delete(n) : ui.open.add(n); renderCatalog({keepDelta:true}); break;
+    case 'group': { const d = el.dataset.d; ui.collapsed.has(d) ? ui.collapsed.delete(d) : ui.collapsed.add(d); saveCollapsed(); renderCatalog({keepDelta:true}); const again = [...document.querySelectorAll('#rows .group-btn')].find(b => b.dataset.d === d); if (again) again.focus({preventScroll:true}); break; }
+    case 'collapseall': { if (el.dataset.mode === 'expand') ui.collapsed.clear(); else for (const d of cat.depts) ui.collapsed.add(d); saveCollapsed(); renderCatalog({keepDelta:true}); break; }
     case 'add': case 'promote': if (addCourse(n, true)) commit(`Adding ${fmt(n)}`); break;
     case 'maybe': if (addCourse(n, false)) commit(); break;
     case 'demote': if (addCourse(n, false)) commit(`Moving ${fmt(n)} to maybes`); break;
